@@ -9,6 +9,7 @@ https://matplotlib.org/examples/user_interfaces/embedding_in_qt4.html
 PyQt4 doc
 http://pyqt.sourceforge.net/Docs/PyQt4/
 
+qwt
 
 
 @author: arnaud
@@ -20,9 +21,12 @@ from sys import argv
 import sys
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-
+import threading
+import serial
+from PyQt4.QtCore import QObject, pyqtSignal
 
 class MainWindow(QtGui.QMainWindow):
+  
   def __init__(self, parent=None):
     QtGui.QMainWindow.__init__(self, parent)
     self.setFixedSize(1190,780)
@@ -36,22 +40,23 @@ class MainWindow(QtGui.QMainWindow):
     # Layout 11
     lay11 = QtGui.QGridLayout()
     
-    pitchCompass = Qwt.QwtCompass()
-    pitchCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
+    self.pitchCompass = Qwt.QwtCompass()
+    self.pitchCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
     
-    rollCompass = Qwt.QwtCompass()
-    rollCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
+    self.rollCompass = Qwt.QwtCompass()
+    self.rollCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
+    self.rollCompass.setValue(90)
     
-    haDial = Qwt.QwtDial()
-    haDial.setMode(Qwt.QwtDial.RotateScale)
+    self.haDial = Qwt.QwtDial()
+    self.haDial.setMode(Qwt.QwtDial.RotateScale)
     
     figBall = Figure(figsize=(210, 170), dpi=120)
-    fcBall = FigureCanvas(figBall)
+    self.fcBall = FigureCanvas(figBall)
     
-    lay11.addWidget(pitchCompass, 0, 0)
-    lay11.addWidget(fcBall, 0, 1)
-    lay11.addWidget(haDial, 1, 0)
-    lay11.addWidget(rollCompass, 1, 1)
+    lay11.addWidget(self.pitchCompass, 0, 0)
+    lay11.addWidget(self.fcBall, 0, 1)
+    lay11.addWidget(self.haDial, 1, 0)
+    lay11.addWidget(self.rollCompass, 1, 1)
     
     lay11.setColumnStretch(0,1)
     lay11.setColumnStretch(1,1)
@@ -61,23 +66,23 @@ class MainWindow(QtGui.QMainWindow):
     # Layout 12
     lay12 = QtGui.QGridLayout()
     
-    ths = {}
+    self.ths = {}
     for i in range(6):
-      ths[i] = QtGui.QSlider()
-      ths[i].setMinimum(-90)
-      ths[i].setMaximum(90)
-      ths[i].setPageStep(1)
-      ths[i].setTickPosition(QtGui.QSlider.TicksBothSides)
-      ths[i].setTickInterval(15)
-      ths[i].setMinimumSize(38,111)
-      ths[i].setMaximumSize(38,111)
+      self.ths[i] = QtGui.QSlider()
+      self.ths[i].setMinimum(-90)
+      self.ths[i].setMaximum(90)
+      self.ths[i].setPageStep(1)
+      self.ths[i].setTickPosition(QtGui.QSlider.TicksBothSides)
+      self.ths[i].setTickInterval(15)
+      self.ths[i].setMinimumSize(38,111)
+      self.ths[i].setMaximumSize(38,111)
     
-    lay12.addWidget(ths[0],0,1)
-    lay12.addWidget(ths[1],0,2)
-    lay12.addWidget(ths[2],1,0)
-    lay12.addWidget(ths[3],1,3)
-    lay12.addWidget(ths[4],2,1)
-    lay12.addWidget(ths[5],2,2)
+    lay12.addWidget(self.ths[0],0,1)
+    lay12.addWidget(self.ths[1],0,2)
+    lay12.addWidget(self.ths[2],1,0)
+    lay12.addWidget(self.ths[3],1,3)
+    lay12.addWidget(self.ths[4],2,1)
+    lay12.addWidget(self.ths[5],2,2)
     
     lay1.addLayout(lay11)
     lay1.addLayout(lay12)
@@ -92,10 +97,10 @@ class MainWindow(QtGui.QMainWindow):
     lay21 = QtGui.QVBoxLayout()
 
     fig3d = Figure(figsize=(210, 170), dpi=120)
-    fc3d = FigureCanvas(fig3d)
+    self.fc3d = FigureCanvas(fig3d)
     
     figprog = Figure(figsize=(210, 170), dpi=120)
-    fcprog = FigureCanvas(fig3d)
+    self.fcprog = FigureCanvas(figprog)
 
     groupP = QtGui.QGroupBox('Platform')
     groupN = QtGui.QGroupBox('Nunchuck')
@@ -122,25 +127,25 @@ class MainWindow(QtGui.QMainWindow):
     labelN5 = QtGui.QLabel('Phi')
     labelN6 = QtGui.QLabel('Theta')
     
-    lcdP = {}
-    lcdN = {}
+    self.lcdP = {}
+    self.lcdN = {}
     for i in range(6):
-      lcdP[i] = QtGui.QLCDNumber()
-      lcdN[i] = QtGui.QLCDNumber()
+      self.lcdP[i] = QtGui.QLCDNumber()
+      self.lcdN[i] = QtGui.QLCDNumber()
     
-    groupP1.addRow(labelP1, lcdP[0])
-    groupP1.addRow(labelP2, lcdP[1])
-    groupP1.addRow(labelP3, lcdP[2])    
-    groupP2.addRow(labelP4, lcdP[3])
-    groupP2.addRow(labelP5, lcdP[4])
-    groupP2.addRow(labelP6, lcdP[5])
+    groupP1.addRow(labelP1, self.lcdP[0])
+    groupP1.addRow(labelP2, self.lcdP[1])
+    groupP1.addRow(labelP3, self.lcdP[2])    
+    groupP2.addRow(labelP4, self.lcdP[3])
+    groupP2.addRow(labelP5, self.lcdP[4])
+    groupP2.addRow(labelP6, self.lcdP[5])
     
-    groupN1.addRow(labelN1, lcdN[0])
-    groupN1.addRow(labelN2, lcdN[1])
-    groupN1.addRow(labelN3, lcdN[2])    
-    groupN2.addRow(labelN4, lcdN[3])
-    groupN2.addRow(labelN5, lcdN[4])
-    groupN2.addRow(labelN6, lcdN[5])
+    groupN1.addRow(labelN1, self.lcdN[0])
+    groupN1.addRow(labelN2, self.lcdN[1])
+    groupN1.addRow(labelN3, self.lcdN[2])    
+    groupN2.addRow(labelN4, self.lcdN[3])
+    groupN2.addRow(labelN5, self.lcdN[4])
+    groupN2.addRow(labelN6, self.lcdN[5])
     
     groupPl.addLayout(groupP1)
     groupPl.addLayout(groupP2)
@@ -150,12 +155,12 @@ class MainWindow(QtGui.QMainWindow):
     groupP.setLayout(groupPl)
     groupN.setLayout(groupNl)
 
-    lay21.addWidget(fc3d)
-    lay21.addWidget(fcprog)
+    lay21.addWidget(self.fc3d)
+    lay21.addWidget(self.fcprog)
     lay21.addWidget(groupP)
     lay21.addWidget(groupN)
-    lay21.setStretchFactor(fc3d,2)
-    lay21.setStretchFactor(fcprog,2)
+    lay21.setStretchFactor(self.fc3d,2)
+    lay21.setStretchFactor(self.fcprog,2)
     lay21.setStretchFactor(groupP,1)
     lay21.setStretchFactor(groupN,1)
   
@@ -163,17 +168,17 @@ class MainWindow(QtGui.QMainWindow):
     # Layout 22
     lay22 = QtGui.QVBoxLayout()
     lay221 = QtGui.QFormLayout()
-    dsbP = QtGui.QDoubleSpinBox()    
-    dsbI = QtGui.QDoubleSpinBox()
-    dsbD = QtGui.QDoubleSpinBox()
-    lay221.addRow("P", dsbP)
-    lay221.addRow("I", dsbI)
-    lay221.addRow("D", dsbD)
+    self.dsbP = QtGui.QDoubleSpinBox()    
+    self.dsbI = QtGui.QDoubleSpinBox()
+    self.dsbD = QtGui.QDoubleSpinBox()
+    lay221.addRow("P", self.dsbP)
+    lay221.addRow("I", self.dsbI)
+    lay221.addRow("D", self.dsbD)
     
-    tbTargetList = QtGui.QTableView()
+    self.tbTargetList = QtGui.QTableView()
     
     lay22.addLayout(lay221)
-    lay22.addWidget(tbTargetList)
+    lay22.addWidget(self.tbTargetList)
     lay22.addItem(QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding))
     
     lay2.addLayout(lay21)
@@ -188,12 +193,12 @@ class MainWindow(QtGui.QMainWindow):
     lay331 = QtGui.QGridLayout()
     lay332 = QtGui.QVBoxLayout()
     
-    pbAutoMan = QtGui.QPushButton("Automatic")
-    pbNunGui = QtGui.QPushButton("Nunchuck")
-    pbPlatSens = QtGui.QPushButton("Platform")
-    pbAutoMan.setCheckable(True)
-    pbNunGui.setCheckable(True)
-    pbPlatSens.setCheckable(True)
+    self.pbAutoMan = QtGui.QPushButton("Automatic")
+    self.pbNunGui = QtGui.QPushButton("Nunchuck")
+    self.pbPlatSens = QtGui.QPushButton("Platform")
+    self.pbAutoMan.setCheckable(True)
+    self.pbNunGui.setCheckable(True)
+    self.pbPlatSens.setCheckable(True)
     
     #pbAutoManIcon = QtGui.QIcon()
     #pbAutoManIcon.addPixmap(QtGui.QPixmap('auto.png'), QtGui.QIcon.Normal, QtGui.QIcon.On)
@@ -202,40 +207,40 @@ class MainWindow(QtGui.QMainWindow):
 
     #pbAutoMan.setIconSize(QSize(pbAutoMan.size()
     
-    for ts in [pbAutoMan, pbNunGui, pbPlatSens]:
+    for ts in [self.pbAutoMan, self.pbNunGui, self.pbPlatSens]:
       lay31.addWidget(ts)
       
-    pbCenter = QtGui.QPushButton("Centre")
-    pbCircle = QtGui.QPushButton("Circle")
-    pbSquare = QtGui.QPushButton("Square")
-    pbTriangle = QtGui.QPushButton("Triangle")
+    self.pbCenter = QtGui.QPushButton("Centre")
+    self.pbCircle = QtGui.QPushButton("Circle")
+    self.pbSquare = QtGui.QPushButton("Square")
+    self.pbTriangle = QtGui.QPushButton("Triangle")
     
-    lay32.addWidget(pbCenter,0,0)
-    lay32.addWidget(pbCircle,0,1)
-    lay32.addWidget(pbSquare,1,0)
-    lay32.addWidget(pbTriangle,1,1)
+    lay32.addWidget(self.pbCenter,0,0)
+    lay32.addWidget(self.pbCircle,0,1)
+    lay32.addWidget(self.pbSquare,1,0)
+    lay32.addWidget(self.pbTriangle,1,1)
     
-    sls = {}
+    self.sls = {}
     for i in range(6):
-      sls[i] = QtGui.QSlider()
-      sls[i].setMinimum(-90)
-      sls[i].setMaximum(90)
-      sls[i].setPageStep(1)
-      sls[i].setTickPosition(QtGui.QSlider.TicksBothSides)
-      sls[i].setTickInterval(15)
-      sls[i].setMinimumSize(28,145)
-      sls[i].setMaximumSize(28,145)
-      lay331.addWidget(sls[i],0,i)
+      self.sls[i] = QtGui.QSlider()
+      self.sls[i].setMinimum(-90)
+      self.sls[i].setMaximum(90)
+      self.sls[i].setPageStep(1)
+      self.sls[i].setTickPosition(QtGui.QSlider.TicksBothSides)
+      self.sls[i].setTickInterval(15)
+      self.sls[i].setMinimumSize(28,145)
+      self.sls[i].setMaximumSize(28,145)
+      lay331.addWidget(self.sls[i],0,i)
       lab = QtGui.QLabel(str(i))
       lab.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
       lay331.addWidget(lab,1,i)
     
     lay331.setRowStretch(6,1)
     
-    pbHome = QtGui.QPushButton("Home")
-    pbZero = QtGui.QPushButton("0 deg")
-    lay332.addWidget(pbHome)
-    lay332.addWidget(pbZero)
+    self.pbHome = QtGui.QPushButton("Home")
+    self.pbZero = QtGui.QPushButton("0 deg")
+    lay332.addWidget(self.pbHome)
+    lay332.addWidget(self.pbZero)
     lay332.addItem(QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding))
     
     lay33.addLayout(lay331)
@@ -260,7 +265,54 @@ class MainWindow(QtGui.QMainWindow):
     centralArea.setLayout(lay0)
     self.setCentralWidget(centralArea)
     
-        
+    self.monitor = SerialMonitor()
+    self.monitor.bufferUpdated.connect(self.update)
+    self.monitor.start()
+    
+  def update(self, msg):
+    print(msg)
+    print msg
+    self.pbCenter.setText(msg)
+      
+
+class SerialMonitor(QObject):
+  """
+  From https://codereview.stackexchange.com/questions/142130/serial-port-data-plotter-in-pyqt
+  """
+  
+  bufferUpdated = pyqtSignal(unicode)
+
+  def __init__(self):
+    super(SerialMonitor, self).__init__()
+    self.running = False
+    self.thread = threading.Thread(target=self.serial_monitor_thread)
+
+  def start(self):
+    print("Starting serial thread")
+    self.ser = serial.open('/dev/pts/2')   # Testing
+    #ser = serial.Serial('/dev/ttyACM0') # Arduino
+    print("the serial port is")
+    print(self.ser)
+    self.running = True
+    self.thread.start()
+
+  def stop(self):
+    print("Stopping serial thread")
+    self.running = False
+    self.ser.close()
+
+  def serial_monitor_thread(self):
+    while self.running is True:
+      msg = self.ser.readline().decode('ascii')
+      if msg:
+        try:
+          self.bufferUpdated.emit(msg)
+        except ValueError:
+          print('Wrong data')
+      else:
+        pass
+      
+      
 if __name__ == "__main__":
     #app = QtGui.QApplication(argv)
     mainWindow = MainWindow()
