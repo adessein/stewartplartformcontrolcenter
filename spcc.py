@@ -20,10 +20,13 @@ import PyQt4.Qwt5 as Qwt
 from sys import argv
 import sys
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Line3D
 from matplotlib.figure import Figure
 import threading
 import serial
 from PyQt4.QtCore import QObject, pyqtSignal
+from numpy import zeros
 
 class MainWindow(QtGui.QMainWindow):
   
@@ -50,11 +53,12 @@ class MainWindow(QtGui.QMainWindow):
     self.haDial = Qwt.QwtDial()
     self.haDial.setMode(Qwt.QwtDial.RotateScale)
     
-    figBall = Figure(figsize=(210, 170), dpi=120)
-    self.fcBall = FigureCanvas(figBall)
+    self.figBall = Figure(figsize=(210, 170), dpi=120)
+    self.axBall = self.figBall.add_subplot(111)
+    fcBall = FigureCanvas(self.figBall)
     
     lay11.addWidget(self.pitchCompass, 0, 0)
-    lay11.addWidget(self.fcBall, 0, 1)
+    lay11.addWidget(fcBall, 0, 1)
     lay11.addWidget(self.haDial, 1, 0)
     lay11.addWidget(self.rollCompass, 1, 1)
     
@@ -77,12 +81,12 @@ class MainWindow(QtGui.QMainWindow):
       self.ths[i].setMinimumSize(38,111)
       self.ths[i].setMaximumSize(38,111)
     
-    lay12.addWidget(self.ths[0],0,1)
-    lay12.addWidget(self.ths[1],0,2)
-    lay12.addWidget(self.ths[2],1,0)
-    lay12.addWidget(self.ths[3],1,3)
-    lay12.addWidget(self.ths[4],2,1)
-    lay12.addWidget(self.ths[5],2,2)
+    lay12.addWidget(self.ths[4],0,1)
+    lay12.addWidget(self.ths[3],0,2)
+    lay12.addWidget(self.ths[5],1,0)
+    lay12.addWidget(self.ths[2],1,3)
+    lay12.addWidget(self.ths[0],2,1)
+    lay12.addWidget(self.ths[1],2,2)
     
     lay1.addLayout(lay11)
     lay1.addLayout(lay12)
@@ -96,11 +100,14 @@ class MainWindow(QtGui.QMainWindow):
     # Layout 21
     lay21 = QtGui.QVBoxLayout()
 
-    fig3d = Figure(figsize=(210, 170), dpi=120)
-    self.fc3d = FigureCanvas(fig3d)
+    self.fig3d = Figure(figsize=(210, 170), dpi=120)
+    self.axfig3d = self.fig3d.add_subplot(111, projection='3d', aspect='equal')
+    self.axfig3d.set_axis_off()
+    fc3d = FigureCanvas(self.fig3d)
     
-    figprog = Figure(figsize=(210, 170), dpi=120)
-    self.fcprog = FigureCanvas(figprog)
+    self.fig2d = Figure(figsize=(210, 170), dpi=120)
+    self.axfig2d = self.fig2d.add_subplot(111)
+    fc2d = FigureCanvas(self.fig2d)
 
     groupP = QtGui.QGroupBox('Platform')
     groupN = QtGui.QGroupBox('Nunchuck')
@@ -121,11 +128,11 @@ class MainWindow(QtGui.QMainWindow):
     labelP6 = QtGui.QLabel('Theta')
     
     labelN1 = QtGui.QLabel('X')
-    labelN2 = QtGui.QLabel('Y')
-    labelN3 = QtGui.QLabel('Z')
-    labelN4 = QtGui.QLabel('Rho')
-    labelN5 = QtGui.QLabel('Phi')
-    labelN6 = QtGui.QLabel('Theta')
+    labelN2 = QtGui.QLabel('Rho')
+    labelN3 = QtGui.QLabel('Y')
+    labelN4 = QtGui.QLabel('Phi')
+    labelN5 = QtGui.QLabel('C')
+    labelN6 = QtGui.QLabel('Z')
     
     self.lcdP = {}
     self.lcdN = {}
@@ -155,12 +162,12 @@ class MainWindow(QtGui.QMainWindow):
     groupP.setLayout(groupPl)
     groupN.setLayout(groupNl)
 
-    lay21.addWidget(self.fc3d)
-    lay21.addWidget(self.fcprog)
+    lay21.addWidget(fc3d)
+    lay21.addWidget(fc2d)
     lay21.addWidget(groupP)
     lay21.addWidget(groupN)
-    lay21.setStretchFactor(self.fc3d,2)
-    lay21.setStretchFactor(self.fcprog,2)
+    lay21.setStretchFactor(fc3d,2)
+    lay21.setStretchFactor(fc2d,2)
     lay21.setStretchFactor(groupP,1)
     lay21.setStretchFactor(groupN,1)
   
@@ -265,15 +272,121 @@ class MainWindow(QtGui.QMainWindow):
     centralArea.setLayout(lay0)
     self.setCentralWidget(centralArea)
     
+    # Internal data from the system
+    self.alpha = zeros((6,))
+    self.beta = zeros((6,))
+    self.ballState  = zeros((6,)) # x y vx vy ax ay
+    self.platPos  = zeros((6,)) # x y z rho phi theta
+    self.b = zeros((6,3)) 
+    self.p = zeros((6,3))
+    self.nunPos = zeros((6,)) # x rho y phi C Z
+    self.pidGains = zeros((6,))
+    self.la = zeros((6,))
+    self.ls = zeros((6,))
+    
+    
     self.monitor = SerialMonitor()
     self.monitor.bufferUpdated.connect(self.update)
     self.monitor.start()
-    
+  
   def update(self, msg):
     print(msg)
-    print msg
-    self.pbCenter.setText(msg)
+    self.update_data(msg)
+    self.update_gui()
+  
+  def update_data(self, msg):
+    """
+    The data strings are always arranged like
+    XX .5f .5f .5f .5f .5f .5f
+    where XX is a data code
+    """
+    print("update_data")
+    print(len(msg))
+    data = msg.split()
+    print(data)
+    print(len(data))
+    
+    if len(data) == 7:
+      if data[0] == 'SA':
+        # Servo angles
+        print("SA message")
+        for i in range(6):
+          self.alpha[i] = float(data[i+1])
+      elif data[0] == 'BP':
+        # Ball position
+        for i in range(6):
+          self.ballState[i] = float(data[i+1])
+      elif data[0] == 'PP':
+        # Platform position
+        for i in range(6):
+          self.platPos[i] = float(data[i+1])
+      elif data[0] == 'NP':
+        # Nunchuk position
+        for i in range(6):
+          self.nunPos[i] = float(data[i+1])
+      elif data[0] == 'CG':
+        # Controler gains PID for both directions
+        for i in range(6):
+          self.pidGains[i] = float(data[i+1])  
       
+      elif data[0] == 'PX':
+        # X-values of the platform attachement points (P points)
+        for i in range(6):
+          self.p[i][0] = float(data[i+1])  
+      elif data[0] == 'PY':
+        # Y-values of the platform attachement points (P points)
+        for i in range(6):
+          self.p[i][1] = float(data[i+1])  
+      elif data[0] == 'PZ':
+        # Z-values of the platform attachement points (P points)
+        for i in range(6):
+          self.p[i][2] = float(data[i+1])  
+      elif data[0] == 'BX':
+        # X-values of the base attachement points (P points)
+        for i in range(6):
+          self.b[i][0] = float(data[i+1])  
+      elif data[0] == 'BY':
+        # Y-values of the base attachement points (P points)
+        for i in range(6):
+          self.b[i][1] = float(data[i+1])  
+      elif data[0] == 'BZ':
+        # Z-values of the base attachement points (P points)
+        for i in range(6):
+          self.b[i][2] = float(data[i+1])  
+      elif data[0] == 'BT':
+        # beta angles
+        for i in range(6):
+          self.beta[i] = float(data[i+1])  
+      elif data[0] == 'LS':
+        # length of the push rods 
+        for i in range(6):
+          self.ls[i] = float(data[i+1])  
+      elif data[0] == 'LA':
+        # length of the servo arms
+        for i in range(6):
+          self.la[i] = float(data[i+1])
+    else:
+      print("Error in the length of the message")
+
+  def update_gui(self):
+    self.axBall.arrow( self.ballState[0], self.ballState[1], 
+                       self.ballState[2], self.ballState[3], 
+                       fc="k", ec="k", head_width=0.05, head_length=0.1, 
+                       length_includes_head=True)
+    
+    for i in range(6):
+      self.ths[i].setValue(self.alpha[i])
+      
+    self.pitchCompass.setValue()
+    self.pitchRoll.setValue()
+      
+    self.lcdP[i].setValue(self.platPos[i])
+    self.lcdN[i].setValue(self.nunPos[i])
+    
+    self.dsbP.setValue(self.pidGains[0])
+    self.dsbI.setValue(self.pidGains[1])
+    self.dsbD.setValue(self.pidGains[2])
+    
 
 class SerialMonitor(QObject):
   """
@@ -289,7 +402,7 @@ class SerialMonitor(QObject):
 
   def start(self):
     print("Starting serial thread")
-    self.ser = serial.open('/dev/pts/2')   # Testing
+    self.ser = serial.open('/dev/pts/3')   # Testing
     #ser = serial.Serial('/dev/ttyACM0') # Arduino
     print("the serial port is")
     print(self.ser)
