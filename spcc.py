@@ -11,6 +11,9 @@ http://pyqt.sourceforge.net/Docs/PyQt4/
 
 qwt
 
+It is important to install pyserial, not just the package python-serial
+pip2 install pyserial
+
 
 @author: arnaud
 """
@@ -25,8 +28,9 @@ from mpl_toolkits.mplot3d.art3d import Line3D
 from matplotlib.figure import Figure
 import threading
 import serial
-from PyQt4.QtCore import QObject, pyqtSignal
+from PyQt4.QtCore import QObject, pyqtSignal, QTimer
 from numpy import zeros
+
 
 class MainWindow(QtGui.QMainWindow):
   
@@ -50,17 +54,18 @@ class MainWindow(QtGui.QMainWindow):
     self.rollCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
     self.rollCompass.setValue(90)
     
-    self.haDial = Qwt.QwtDial()
-    self.haDial.setMode(Qwt.QwtDial.RotateScale)
+    self.yawCompass = Qwt.QwtCompass()
+    self.yawCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
+    self.yawCompass.setValue(0)
     
     self.figBall = Figure(figsize=(210, 170), dpi=120)
     self.axBall = self.figBall.add_subplot(111)
     fcBall = FigureCanvas(self.figBall)
     
-    lay11.addWidget(self.pitchCompass, 0, 0)
+    lay11.addWidget(self.rollCompass, 0, 0)
     lay11.addWidget(fcBall, 0, 1)
-    lay11.addWidget(self.haDial, 1, 0)
-    lay11.addWidget(self.rollCompass, 1, 1)
+    lay11.addWidget(self.yawCompass, 1, 0)
+    lay11.addWidget(self.pitchCompass, 1, 1)
     
     lay11.setColumnStretch(0,1)
     lay11.setColumnStretch(1,1)
@@ -139,6 +144,8 @@ class MainWindow(QtGui.QMainWindow):
     for i in range(6):
       self.lcdP[i] = QtGui.QLCDNumber()
       self.lcdN[i] = QtGui.QLCDNumber()
+      self.lcdP[i].setSegmentStyle(QtGui.QLCDNumber.Flat)
+      self.lcdN[i].setSegmentStyle(QtGui.QLCDNumber.Flat)
     
     groupP1.addRow(labelP1, self.lcdP[0])
     groupP1.addRow(labelP2, self.lcdP[1])
@@ -255,9 +262,12 @@ class MainWindow(QtGui.QMainWindow):
     lay33.setStretchFactor(lay331,3)
     lay33.setStretchFactor(lay332,1)
     
+    self.tedebug = QtGui.QPlainTextEdit()
+    
     lay3.addLayout(lay31)
     lay3.addLayout(lay32)
     lay3.addLayout(lay33)
+    lay3.addWidget(self.tedebug)
     lay3.setStretchFactor(lay31,2)
     lay3.setStretchFactor(lay32,1)
     lay3.setStretchFactor(lay33,3)
@@ -284,15 +294,33 @@ class MainWindow(QtGui.QMainWindow):
     self.la = zeros((6,))
     self.ls = zeros((6,))
     
+    self.ser = serial.Serial('/dev/pts/2', timeout = 0.1)   # Testing
+    #ser = serial.Serial('/dev/ttyACM0') # Arduino
     
-    self.monitor = SerialMonitor()
-    self.monitor.bufferUpdated.connect(self.update)
-    self.monitor.start()
+    self.timerUpdate = QtCore.QTimer()
+    self.timerUpdate.timeout.connect(self.update)
+    #self.timerUpdate.connect(self.timerUpdate,QtCore.SIGNAL('timeout()'),self.update)
+    self.timerUpdate.start(100)
+    self.log("Timer started")
+ 
+  def test(self):
+    self.tedebug.setPlainText("test")
   
-  def update(self, msg):
-    print(msg)
-    self.update_data(msg)
-    self.update_gui()
+  def log(self, txt):
+    self.tedebug.moveCursor(QtGui.QTextCursor.End)
+    self.tedebug.insertPlainText(txt + '\n')
+    self.tedebug.ensureCursorVisible()
+  
+  def update(self):
+    self.log("Reading Serial...")
+    self.log(str(self.ser.inWaiting()))
+    msg = self.ser.readline().decode('ascii')
+    if len(msg) > 5:
+      self.log(msg)
+      self.update_data(msg)
+      self.update_gui()
+
+    
   
   def update_data(self, msg):
     """
@@ -300,11 +328,7 @@ class MainWindow(QtGui.QMainWindow):
     XX .5f .5f .5f .5f .5f .5f
     where XX is a data code
     """
-    print("update_data")
-    print(len(msg))
     data = msg.split()
-    print(data)
-    print(len(data))
     
     if len(data) == 7:
       if data[0] == 'SA':
@@ -369,65 +393,25 @@ class MainWindow(QtGui.QMainWindow):
       print("Error in the length of the message")
 
   def update_gui(self):
-    self.axBall.arrow( self.ballState[0], self.ballState[1], 
-                       self.ballState[2], self.ballState[3], 
-                       fc="k", ec="k", head_width=0.05, head_length=0.1, 
-                       length_includes_head=True)
+    #self.axBall.arrow( self.ballState[0], self.ballState[1], 
+    #                   self.ballState[2], self.ballState[3], 
+    #                   fc="k", ec="k", head_width=0.05, head_length=0.1, 
+    #                   length_includes_head=True)
     
     for i in range(6):
-      self.ths[i].setValue(self.alpha[i])
+      self.ths[i].setValue(int(self.alpha[i]))
+      self.lcdP[i].display(self.platPos[i])
+      self.lcdN[i].display(self.nunPos[i])
       
-    self.pitchCompass.setValue()
-    self.pitchRoll.setValue()
-      
-    self.lcdP[i].setValue(self.platPos[i])
-    self.lcdN[i].setValue(self.nunPos[i])
-    
+    self.pitchCompass.setValue(self.platPos[3])
+    self.rollCompass.setValue(self.platPos[4])
     self.dsbP.setValue(self.pidGains[0])
     self.dsbI.setValue(self.pidGains[1])
     self.dsbD.setValue(self.pidGains[2])
-    
-
-class SerialMonitor(QObject):
-  """
-  From https://codereview.stackexchange.com/questions/142130/serial-port-data-plotter-in-pyqt
-  """
-  
-  bufferUpdated = pyqtSignal(unicode)
-
-  def __init__(self):
-    super(SerialMonitor, self).__init__()
-    self.running = False
-    self.thread = threading.Thread(target=self.serial_monitor_thread)
-
-  def start(self):
-    print("Starting serial thread")
-    self.ser = serial.open('/dev/pts/3')   # Testing
-    #ser = serial.Serial('/dev/ttyACM0') # Arduino
-    print("the serial port is")
-    print(self.ser)
-    self.running = True
-    self.thread.start()
-
-  def stop(self):
-    print("Stopping serial thread")
-    self.running = False
-    self.ser.close()
-
-  def serial_monitor_thread(self):
-    while self.running is True:
-      msg = self.ser.readline().decode('ascii')
-      if msg:
-        try:
-          self.bufferUpdated.emit(msg)
-        except ValueError:
-          print('Wrong data')
-      else:
-        pass
       
       
 if __name__ == "__main__":
-    #app = QtGui.QApplication(argv)
+    app = QtGui.QApplication(sys.argv)
     mainWindow = MainWindow()
     mainWindow.show()
-    #sys.exit(app.exec_())
+    sys.exit(app.exec_())
