@@ -6,6 +6,9 @@ Created on Mon Nov 20 21:00:10 2017
 Integration of Matplotlib in Qt
 https://matplotlib.org/examples/user_interfaces/embedding_in_qt4.html
 
+Refresh a plot / animated plot
+http://ybenabbas.cu.cc/index.php/tutorials/10-creer-un-graphe-dynamique-avec-pyplot-et-pylab?showall=&start=1
+
 PyQt4 doc
 http://pyqt.sourceforge.net/Docs/PyQt4/
 
@@ -13,6 +16,17 @@ qwt
 
 It is important to install pyserial, not just the package python-serial
 pip2 install pyserial
+
+(yaw, psi)
+   (Z)----------->  X  (roll, phi)
+    |
+    |
+    |
+    | 
+   \|/
+    Y
+   
+    Y (pitch, theta)
 
 
 @author: arnaud
@@ -32,11 +46,51 @@ from PyQt4.QtCore import QObject, pyqtSignal, QTimer
 from numpy import zeros
 from math import degrees, radians, cos, sin
 
+serialInterface = '/dev/pts/2' # test
+#serialInterface = '/dev/ttyACM0' # arduino
+serialPeriod = 100 #ms
+serialTimeout = 0.010 #s
 
 class MainWindow(QtGui.QMainWindow):
   
   def __init__(self, parent=None):
     QtGui.QMainWindow.__init__(self, parent)
+    
+    self.setupGui()
+    
+    # Internal data from the system
+    self.alpha = zeros((6,))
+    self.beta = zeros((6,))
+    self.ballState  = zeros((6,)) # x y vx vy ax ay
+    self.platPos  = zeros((6,)) # x y z phi theta psi
+    self.b = zeros((6,3)) 
+    self.p = zeros((6,3))
+    self.nunPos = zeros((6,)) # x y phi theta C Z
+    self.pidGains = zeros((6,))
+    self.la = zeros((6,))
+    self.ls = zeros((6,))
+    
+    self.ser = serial.Serial(serialInterface, timeout = serialTimeout)
+    
+    self.timerUpdate = QtCore.QTimer()
+    self.timerUpdate.timeout.connect(self.update)
+    self.timerUpdate.start(serialPeriod)
+    self.log("Timer started")
+    
+    self.dsbP.valueChanged.connect(self.updateControlerGains)
+    self.dsbI.valueChanged.connect(self.updateControlerGains)
+    self.dsbD.valueChanged.connect(self.updateControlerGains)
+  
+  def updateControlerGains(self, gp):
+    self.pidGains[0] = self.dsbP.value()
+    self.pidGains[1] = self.dsbI.value()
+    self.pidGains[2] = self.dsbD.value()
+    self.pidGains[3] = self.dsbP.value()
+    self.pidGains[4] = self.dsbI.value()
+    self.pidGains[5] = self.dsbD.value()
+    self.sendData('CG')
+ 
+  def setupGui(self):
     self.setFixedSize(1190,780)
     self.setWindowTitle('Stewart platform control center')
     
@@ -50,10 +104,11 @@ class MainWindow(QtGui.QMainWindow):
     
     self.pitchCompass = Qwt.QwtCompass()
     self.pitchCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
+    self.pitchCompass.setValue(90)
     
     self.rollCompass = Qwt.QwtCompass()
     self.rollCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
-    self.rollCompass.setValue(90)
+    self.rollCompass.setValue(0)
     
     self.yawCompass = Qwt.QwtCompass()
     self.yawCompass.setNeedle(Qwt.QwtCompassMagnetNeedle(Qwt.QwtCompassMagnetNeedle.ThinStyle))
@@ -64,8 +119,8 @@ class MainWindow(QtGui.QMainWindow):
     fcBall = FigureCanvas(self.figBall)
     
     lay11.addWidget(self.rollCompass, 0, 0)
-    lay11.addWidget(fcBall, 0, 1)
-    lay11.addWidget(self.yawCompass, 1, 0)
+    lay11.addWidget(self.yawCompass, 0, 1)
+    lay11.addWidget(fcBall, 1, 0)
     lay11.addWidget(self.pitchCompass, 1, 1)
     
     lay11.setColumnStretch(0,1)
@@ -86,6 +141,7 @@ class MainWindow(QtGui.QMainWindow):
       self.ths[i].setTickInterval(15)
       self.ths[i].setMinimumSize(38,111)
       self.ths[i].setMaximumSize(38,111)
+      self.ths[i].setEnabled(False)
     
     lay12.addWidget(self.ths[4],0,1)
     lay12.addWidget(self.ths[3],0,2)
@@ -129,16 +185,16 @@ class MainWindow(QtGui.QMainWindow):
     labelP1 = QtGui.QLabel('X')
     labelP2 = QtGui.QLabel('Y')
     labelP3 = QtGui.QLabel('Z')
-    labelP4 = QtGui.QLabel('Rho')
-    labelP5 = QtGui.QLabel('Phi')
-    labelP6 = QtGui.QLabel('Theta')
+    labelP4 = QtGui.QLabel('Phi')
+    labelP5 = QtGui.QLabel('Theta')
+    labelP6 = QtGui.QLabel('Psi')
     
     labelN1 = QtGui.QLabel('X')
-    labelN2 = QtGui.QLabel('Rho')
-    labelN3 = QtGui.QLabel('Y')
-    labelN4 = QtGui.QLabel('Phi')
-    labelN5 = QtGui.QLabel('C')
-    labelN6 = QtGui.QLabel('Z')
+    labelN2 = QtGui.QLabel('Y')
+    labelN3 = QtGui.QLabel('Phi')
+    labelN4 = QtGui.QLabel('Theta')
+    labelN5 = QtGui.QLabel('But C')
+    labelN6 = QtGui.QLabel('But Z')
     
     self.lcdP = {}
     self.lcdN = {}
@@ -157,9 +213,9 @@ class MainWindow(QtGui.QMainWindow):
     
     groupN1.addRow(labelN1, self.lcdN[0])
     groupN1.addRow(labelN2, self.lcdN[1])
-    groupN1.addRow(labelN3, self.lcdN[2])    
+    groupN1.addRow(labelN5, self.lcdN[4])    
+    groupN2.addRow(labelN3, self.lcdN[2])
     groupN2.addRow(labelN4, self.lcdN[3])
-    groupN2.addRow(labelN5, self.lcdN[4])
     groupN2.addRow(labelN6, self.lcdN[5])
     
     groupPl.addLayout(groupP1)
@@ -283,27 +339,6 @@ class MainWindow(QtGui.QMainWindow):
     centralArea.setLayout(lay0)
     self.setCentralWidget(centralArea)
     
-    # Internal data from the system
-    self.alpha = zeros((6,))
-    self.beta = zeros((6,))
-    self.ballState  = zeros((6,)) # x y vx vy ax ay
-    self.platPos  = zeros((6,)) # x y z rho phi theta
-    self.b = zeros((6,3)) 
-    self.p = zeros((6,3))
-    self.nunPos = zeros((6,)) # x rho y phi C Z
-    self.pidGains = zeros((6,))
-    self.la = zeros((6,))
-    self.ls = zeros((6,))
-    
-    self.ser = serial.Serial('/dev/pts/2', timeout = 0.1)   # Testing
-    #ser = serial.Serial('/dev/ttyACM0') # Arduino
-    
-    self.timerUpdate = QtCore.QTimer()
-    self.timerUpdate.timeout.connect(self.update)
-    #self.timerUpdate.connect(self.timerUpdate,QtCore.SIGNAL('timeout()'),self.update)
-    self.timerUpdate.start(100)
-    self.log("Timer started")
- 
   def test(self):
     self.tedebug.setPlainText("test")
   
@@ -313,21 +348,32 @@ class MainWindow(QtGui.QMainWindow):
     self.tedebug.ensureCursorVisible()
   
   def update(self):
-    self.log("Reading Serial...")
-    self.log(str(self.ser.inWaiting()))
+    #self.log("Reading Serial...")
+    #self.log(str(self.ser.inWaiting()))
     msg = self.ser.readline().decode('ascii')
     if len(msg) > 5:
-      self.log(msg)
+      self.log("<" + msg)
       self.update_data(msg)
       self.update_gui()
 
-    
-  
+  def sendData(self, msgType):
+    msg = None
+
+    if msgType == 'CG':
+      # Controler gains PID for both directions
+      msg = "CG %.5f %.5f %.5f %.5f %.5f %.5f \n" % (self.pidGains[0], self.pidGains[1], self.pidGains[2], self.pidGains[3], self.pidGains[4], self.pidGains[5])
+
+    if msg :
+      self.log(">" + msg)
+      self.ser.write(msg.encode('ascii'))
+
   def update_data(self, msg):
     """
     The data strings are always arranged like
     XX .5f .5f .5f .5f .5f .5f
     where XX is a data code
+    
+    Angles are in degrees
     """
     data = msg.split()
     
@@ -337,16 +383,16 @@ class MainWindow(QtGui.QMainWindow):
         print("SA message")
         for i in range(6):
           self.alpha[i] = float(data[i+1])
-      elif data[0] == 'BP':
-        # Ball position
+      elif data[0] == 'BS':
+        # Ball state x y vx vy ax ay
         for i in range(6):
           self.ballState[i] = float(data[i+1])
       elif data[0] == 'PP':
-        # Platform position
+        # Platform position x y z phi theta psi
         for i in range(6):
           self.platPos[i] = float(data[i+1])
       elif data[0] == 'NP':
-        # Nunchuk position
+        # Nunchuk position  x y phi theta C Z
         for i in range(6):
           self.nunPos[i] = float(data[i+1])
       elif data[0] == 'CG':
@@ -421,9 +467,9 @@ class MainWindow(QtGui.QMainWindow):
     x = self.platPos[0]
     y = self.platPos[1]
     z = self.platPos[2]
-    psi = radians(self.platPos[3])
+    phi = radians(self.platPos[3])
     theta = radians(self.platPos[4])
-    phi = radians(self.platPos[5])
+    psi = radians(self.platPos[5])
     
     
     for i in range(6):
@@ -448,7 +494,7 @@ class MainWindow(QtGui.QMainWindow):
       
       a[i,0] = self.la[i] * cos(alpha) * cos(beta) + self.b[i][0]
       a[i,1] = self.la[i] * cos(alpha) * sin(beta) + self.b[i][1]
-      a[i,2] = self.la[i] * sin(alpha)                          + self.b[i][2]
+      a[i,2] = self.la[i] * sin(alpha)             + self.b[i][2]
       
       q[i][0] = self.b[i][0] + vec_l[i][0]
       q[i][1] = self.b[i][1] + vec_l[i][1]
