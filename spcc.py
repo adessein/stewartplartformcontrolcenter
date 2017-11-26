@@ -30,6 +30,7 @@ import threading
 import serial
 from PyQt4.QtCore import QObject, pyqtSignal, QTimer
 from numpy import zeros
+from math import degrees, radians, cos, sin
 
 
 class MainWindow(QtGui.QMainWindow):
@@ -408,6 +409,87 @@ class MainWindow(QtGui.QMainWindow):
     self.dsbP.setValue(self.pidGains[0])
     self.dsbI.setValue(self.pidGains[1])
     self.dsbD.setValue(self.pidGains[2])
+    
+    self.upate_fc3d()
+    
+  def upate_fc3d(self):
+    vec_s = zeros((6,3)) # push rod
+    a = zeros((6,3))
+    q = zeros((6,3))
+    vec_l = zeros((6,3))
+    
+    x = self.platPos[0]
+    y = self.platPos[1]
+    z = self.platPos[2]
+    psi = radians(self.platPos[3])
+    theta = radians(self.platPos[4])
+    phi = radians(self.platPos[5])
+    
+    
+    for i in range(6):
+      vec_l[i][0] = cos(psi)*cos(theta) * self.p[i][0] + \
+                    (-sin(psi)*cos(phi)+cos(psi)*sin(theta)*sin(phi)) * self.p[i][1] + \
+                    (sin(psi)*sin(phi)+cos(psi)*sin(theta)*cos(phi)) * self.p[i][2] \
+                    - self.b[i][0] + x
+      vec_l[i][1] = sin(psi)*cos(theta) * self.p[i][0] + \
+                    (cos(psi)*cos(phi)+sin(psi)*sin(theta)*sin(phi)) * self.p[i][1] + \
+                    (-cos(psi)*sin(phi)+sin(psi)*sin(theta)*cos(phi)) * self.p[i][2] \
+                    - self.b[i][1] + y
+      vec_l[i][2] = -sin(theta) * self.p[i][0] + \
+                    cos(theta)*sin(phi) * self.p[i][1] + \
+                    cos(theta)*cos(phi) * self.p[i][2] \
+                    - self.b[i][2] + z
+    
+    # Some vectors
+    for i in range(6):
+      alpha = radians(self.alpha[i])
+      beta = radians(self.beta[i])
+      
+      
+      a[i,0] = self.la[i] * cos(alpha) * cos(beta) + self.b[i][0]
+      a[i,1] = self.la[i] * cos(alpha) * sin(beta) + self.b[i][1]
+      a[i,2] = self.la[i] * sin(alpha)                          + self.b[i][2]
+      
+      q[i][0] = self.b[i][0] + vec_l[i][0]
+      q[i][1] = self.b[i][1] + vec_l[i][1]
+      q[i][2] = self.b[i][2] + vec_l[i][2]
+      
+      vec_s[i][0] = q[i][0] - a[i][0]
+      vec_s[i][1] = q[i][1] - a[i][1]
+      vec_s[i][2] = q[i][2] - a[i][2]
+    
+    for i in range(6):
+
+      #sevo horn
+      x_vect = (self.b[i][0], a[i][0])
+      y_vect = (self.b[i][1], a[i][1])
+      z_vect = (self.b[i][2], a[i][2])
+      self.axfig3d.plot(x_vect,y_vect,'ko-', zs=z_vect, ms=3)
+      
+      #horn platform
+      x_vect = (a[i][0], q[i][0])
+      y_vect = (a[i][1], q[i][1])
+      z_vect = (a[i][2], q[i][2])
+      self.axfig3d.plot(x_vect,y_vect,'ko-', zs=z_vect, ms=3)
+
+      #base
+      x_vect = (self.b[i][0], self.b[(i+1)%6][0])
+      y_vect = (self.b[i][1], self.b[(i+1)%6][1])
+      z_vect = (self.b[i][2], self.b[(i+1)%6][2])
+      self.axfig3d.plot(x_vect,y_vect,'g--', zs=z_vect)
+
+      #platform
+      x_vect = (q[i][0], q[(i+1)%6][0])
+      y_vect = (q[i][1], q[(i+1)%6][1])
+      z_vect = (q[i][2], q[(i+1)%6][2])
+      self.axfig3d.plot(x_vect,y_vect,'r--', zs=z_vect)
+
+      self.axfig3d.set_xlabel("X")
+      self.axfig3d.set_ylabel("Y")
+      self.axfig3d.set_label("Z")
+      self.axfig3d.set_zlim3d(0)
+    self.draw()
+      
       
       
 if __name__ == "__main__":
