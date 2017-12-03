@@ -29,6 +29,11 @@ pip2 install pyserial
     Y (pitch, theta)
 
 
+Simulation of the seral conection
+
+socat -d -d pty,rawer  pty,rawer
+echo -e "CG 11.00000 22.00000 33.00000 1.00000 2.00000 3.00000 " > /dev/pts/1
+
 @author: arnaud
 """
 
@@ -47,9 +52,10 @@ from numpy import zeros
 from math import degrees, radians, cos, sin
 
 serialInterface = '/dev/pts/2' # test
-#serialInterface = '/dev/ttyACM0' # arduino
+#serialInterface = '/dev/ttyACM1' # arduino
 serialPeriod = 100 #ms
 serialTimeout = 0.010 #s
+serialSpeed = 115200
 
 class MainWindow(QtGui.QMainWindow):
   
@@ -70,7 +76,8 @@ class MainWindow(QtGui.QMainWindow):
     self.la = zeros((6,))
     self.ls = zeros((6,))
     
-    self.ser = serial.Serial(serialInterface, timeout = serialTimeout)
+    self.ser = serial.Serial(serialInterface, serialSpeed, timeout = serialTimeout)
+    #self.ser = open('data.txt','r')
     
     self.timerUpdate = QtCore.QTimer()
     self.timerUpdate.timeout.connect(self.update)
@@ -80,15 +87,18 @@ class MainWindow(QtGui.QMainWindow):
     self.dsbP.valueChanged.connect(self.updateControlerGains)
     self.dsbI.valueChanged.connect(self.updateControlerGains)
     self.dsbD.valueChanged.connect(self.updateControlerGains)
+    self.sendPID = True
   
   def updateControlerGains(self, gp):
-    self.pidGains[0] = self.dsbP.value()
-    self.pidGains[1] = self.dsbI.value()
-    self.pidGains[2] = self.dsbD.value()
-    self.pidGains[3] = self.dsbP.value()
-    self.pidGains[4] = self.dsbI.value()
-    self.pidGains[5] = self.dsbD.value()
-    self.sendData('CG')
+    if self.sendPID:
+      print("updateControlerGains")
+      self.pidGains[0] = self.dsbP.value()
+      self.pidGains[1] = self.dsbI.value()
+      self.pidGains[2] = self.dsbD.value()
+      self.pidGains[3] = self.dsbP.value()
+      self.pidGains[4] = self.dsbI.value()
+      self.pidGains[5] = self.dsbD.value()
+      self.sendData('CG')
  
   def setupGui(self):
     self.setFixedSize(1190,780)
@@ -145,10 +155,22 @@ class MainWindow(QtGui.QMainWindow):
     
     lay12.addWidget(self.ths[4],0,1)
     lay12.addWidget(self.ths[3],0,2)
-    lay12.addWidget(self.ths[5],1,0)
-    lay12.addWidget(self.ths[2],1,3)
-    lay12.addWidget(self.ths[0],2,1)
-    lay12.addWidget(self.ths[1],2,2)
+    lay12.addWidget(self.ths[5],2,0)
+    lay12.addWidget(self.ths[2],2,3)
+    lay12.addWidget(self.ths[0],4,1)
+    lay12.addWidget(self.ths[1],4,2)
+    
+    self.lcds = {}
+    for i in range(6):
+      self.lcds[i] = QtGui.QLCDNumber()
+      self.lcds[i].setSegmentStyle(QtGui.QLCDNumber.Flat)
+    
+    lay12.addWidget(self.lcds[4],1,1)
+    lay12.addWidget(self.lcds[3],1,2)
+    lay12.addWidget(self.lcds[5],3,0)
+    lay12.addWidget(self.lcds[2],3,3)
+    lay12.addWidget(self.lcds[0],5,1)
+    lay12.addWidget(self.lcds[1],5,2)
     
     lay1.addLayout(lay11)
     lay1.addLayout(lay12)
@@ -239,9 +261,14 @@ class MainWindow(QtGui.QMainWindow):
     # Layout 22
     lay22 = QtGui.QVBoxLayout()
     lay221 = QtGui.QFormLayout()
-    self.dsbP = QtGui.QDoubleSpinBox()    
+    self.dsbP = QtGui.QDoubleSpinBox()
     self.dsbI = QtGui.QDoubleSpinBox()
     self.dsbD = QtGui.QDoubleSpinBox()
+    
+    self.dsbP.setKeyboardTracking(False)
+    self.dsbI.setKeyboardTracking(False)
+    self.dsbD.setKeyboardTracking(False)
+    
     lay221.addRow("P", self.dsbP)
     lay221.addRow("I", self.dsbI)
     lay221.addRow("D", self.dsbD)
@@ -384,10 +411,12 @@ class MainWindow(QtGui.QMainWindow):
         for i in range(6):
           self.alpha[i] = float(data[i+1])
       elif data[0] == 'BS':
+        print("BS message")
         # Ball state x y vx vy ax ay
         for i in range(6):
           self.ballState[i] = float(data[i+1])
       elif data[0] == 'PP':
+        print("PP message")
         # Platform position x y z phi theta psi
         for i in range(6):
           self.platPos[i] = float(data[i+1])
@@ -447,16 +476,20 @@ class MainWindow(QtGui.QMainWindow):
     
     for i in range(6):
       self.ths[i].setValue(int(self.alpha[i]))
+      self.lcds[i].display(self.alpha[i])
       self.lcdP[i].display(self.platPos[i])
       self.lcdN[i].display(self.nunPos[i])
       
     self.pitchCompass.setValue(self.platPos[3])
     self.rollCompass.setValue(self.platPos[4])
+    
+    self.sendPID = False
     self.dsbP.setValue(self.pidGains[0])
     self.dsbI.setValue(self.pidGains[1])
     self.dsbD.setValue(self.pidGains[2])
+    self.sendPID = True
     
-    self.upate_fc3d()
+    #self.upate_fc3d()
     
   def upate_fc3d(self):
     vec_s = zeros((6,3)) # push rod
