@@ -51,10 +51,10 @@ from PyQt4.QtCore import QObject, pyqtSignal, QTimer
 from numpy import zeros
 from math import degrees, radians, cos, sin
 
-serialInterface = '/dev/pts/2' # test
-#serialInterface = '/dev/ttyACM1' # arduino
+#serialInterface = '/dev/pts/2' # test
+serialInterface = '/dev/ttyACM4' # arduino
 serialPeriod = 100 #ms
-serialTimeout = 0.010 #s
+serialTimeout = 0.001 #s
 serialSpeed = 115200
 
 class MainWindow(QtGui.QMainWindow):
@@ -76,7 +76,7 @@ class MainWindow(QtGui.QMainWindow):
     self.la = zeros((6,))
     self.ls = zeros((6,))
     
-    self.ser = serial.Serial(serialInterface, serialSpeed, timeout = serialTimeout)
+    self.ser = serial.Serial(serialInterface, serialSpeed, timeout = serialTimeout, writeTimeout = 0)
     #self.ser = open('data.txt','r')
     
     self.timerUpdate = QtCore.QTimer()
@@ -98,7 +98,7 @@ class MainWindow(QtGui.QMainWindow):
       self.pidGains[3] = self.dsbP.value()
       self.pidGains[4] = self.dsbI.value()
       self.pidGains[5] = self.dsbD.value()
-      self.sendData('CG')
+      self.sendData('cg')
  
   def setupGui(self):
     self.setFixedSize(1190,780)
@@ -260,18 +260,31 @@ class MainWindow(QtGui.QMainWindow):
     
     # Layout 22
     lay22 = QtGui.QVBoxLayout()
-    lay221 = QtGui.QFormLayout()
+    lay221 = QtGui.QGridLayout()
     self.dsbP = QtGui.QDoubleSpinBox()
     self.dsbI = QtGui.QDoubleSpinBox()
     self.dsbD = QtGui.QDoubleSpinBox()
+    
+    self.dsbP.setSingleStep(0.01)
+    self.dsbI.setSingleStep(0.01)
+    self.dsbD.setSingleStep(0.01)
     
     self.dsbP.setKeyboardTracking(False)
     self.dsbI.setKeyboardTracking(False)
     self.dsbD.setKeyboardTracking(False)
     
-    lay221.addRow("P", self.dsbP)
-    lay221.addRow("I", self.dsbI)
-    lay221.addRow("D", self.dsbD)
+    lay221.addWidget(self.dsbP,0,1)
+    lay221.addWidget(self.dsbI,1,1)
+    lay221.addWidget(self.dsbD,2,1)
+    
+    self.lcdpid = {}
+    for i in range(3):
+      self.lcdpid[i] = QtGui.QLCDNumber()
+      self.lcdpid[i].setSegmentStyle(QtGui.QLCDNumber.Flat)
+      
+    lay221.addWidget(self.lcdpid[0],0,2)
+    lay221.addWidget(self.lcdpid[1],1,2)
+    lay221.addWidget(self.lcdpid[2],2,2)
     
     self.tbTargetList = QtGui.QTableView()
     
@@ -379,16 +392,16 @@ class MainWindow(QtGui.QMainWindow):
     #self.log(str(self.ser.inWaiting()))
     msg = self.ser.readline().decode('ascii')
     if len(msg) > 5:
-      self.log("<" + msg)
+      print("<" + msg)
       self.update_data(msg)
-      self.update_gui()
+    self.update_gui()
 
   def sendData(self, msgType):
     msg = None
 
-    if msgType == 'CG':
+    if msgType == 'cg':
       # Controler gains PID for both directions
-      msg = "CG %.5f %.5f %.5f %.5f %.5f %.5f \n" % (self.pidGains[0], self.pidGains[1], self.pidGains[2], self.pidGains[3], self.pidGains[4], self.pidGains[5])
+      msg = "cg %.5f %.5f %.5f %.5f %.5f %.5f \n" % (self.pidGains[0], self.pidGains[1], self.pidGains[2], self.pidGains[3], self.pidGains[4], self.pidGains[5])
 
     if msg :
       self.log(">" + msg)
@@ -407,16 +420,13 @@ class MainWindow(QtGui.QMainWindow):
     if len(data) == 7:
       if data[0] == 'SA':
         # Servo angles
-        print("SA message")
         for i in range(6):
           self.alpha[i] = float(data[i+1])
       elif data[0] == 'BS':
-        print("BS message")
         # Ball state x y vx vy ax ay
         for i in range(6):
           self.ballState[i] = float(data[i+1])
       elif data[0] == 'PP':
-        print("PP message")
         # Platform position x y z phi theta psi
         for i in range(6):
           self.platPos[i] = float(data[i+1])
@@ -483,11 +493,11 @@ class MainWindow(QtGui.QMainWindow):
     self.pitchCompass.setValue(self.platPos[3])
     self.rollCompass.setValue(self.platPos[4])
     
-    self.sendPID = False
-    self.dsbP.setValue(self.pidGains[0])
-    self.dsbI.setValue(self.pidGains[1])
-    self.dsbD.setValue(self.pidGains[2])
-    self.sendPID = True
+    #self.sendPID = False
+    self.lcdpid[0].display(self.pidGains[0])
+    self.lcdpid[1].display(self.pidGains[1])
+    self.lcdpid[2].display(self.pidGains[2])
+    #self.sendPID = True
     
     #self.upate_fc3d()
     
