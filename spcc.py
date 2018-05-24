@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
+
+PYTHON 2
+
 Created on Mon Nov 20 21:00:10 2017
 
 Integration of Matplotlib in Qt
@@ -12,7 +15,22 @@ http://ybenabbas.cu.cc/index.php/tutorials/10-creer-un-graphe-dynamique-avec-pyp
 PyQt4 doc
 http://pyqt.sourceforge.net/Docs/PyQt4/
 
-qwt
+=== Installation of PyQwt5 for Python 2 ===
+
+sudo apt-get install python-qt4-dev
+
+
+cd /home/arnaud/Python/sip-4.19.8/
+pip3 configure.py
+make
+sudo make install
+
+cd /home/arnaud/Python/PyQwt-5.2.1
+cd configure
+python configure.py -Q ../qwt-5.2
+make
+make install
+
 
 It is important to install pyserial, not just the package python-serial
 pip2 install pyserial
@@ -38,7 +56,7 @@ echo -e "CG 11.00000 22.00000 33.00000 1.00000 2.00000 3.00000 " > /dev/pts/1
 """
 
 from PyQt4 import QtCore, QtGui, uic
-import PyQt4.Qwt5 as Qwt
+from PyQt4 import Qwt5 as Qwt
 from sys import argv
 import sys
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
@@ -51,10 +69,10 @@ from PyQt4.QtCore import QObject, pyqtSignal, QTimer
 from numpy import zeros
 from math import degrees, radians, cos, sin
 
-#serialInterface = '/dev/pts/2' # test
-serialInterface = '/dev/ttyACM4' # arduino
-serialPeriod = 100 #ms
-serialTimeout = 0.001 #s
+#serialInterface = '/dev/pts/7' # test
+serialInterface = '/dev/ttyACM0' # arduino
+serialPeriod = 10 #ms
+serialTimeout = 0.003 #s
 serialSpeed = 115200
 
 class MainWindow(QtGui.QMainWindow):
@@ -392,7 +410,7 @@ class MainWindow(QtGui.QMainWindow):
     #self.log(str(self.ser.inWaiting()))
     msg = self.ser.readline().decode('ascii')
     if len(msg) > 5:
-      print("<" + msg)
+      #print("<" + msg)
       self.update_data(msg)
     self.update_gui()
 
@@ -477,6 +495,7 @@ class MainWindow(QtGui.QMainWindow):
           self.la[i] = float(data[i+1])
     else:
       print("Error in the length of the message")
+      print(msg)
 
   def update_gui(self):
     #self.axBall.arrow( self.ballState[0], self.ballState[1], 
